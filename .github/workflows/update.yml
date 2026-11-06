@@ -1,0 +1,88 @@
+# Collect, build and publish the static API.
+#
+# What a run does:
+#   1. collects members of Congress, state legislators, Census district tables, Senate votes, and any House
+#      roll calls newer than data/raw/house_votes_<year>.jsonl (committed, so each run fetches only new ones),
+#   2. writes dist/ and fails if a state's legislators stop tying to Census districts (an upstream format
+#      change), so a broken build is never published,
+#   3. commits the refreshed House JSONL,
+#   4. uploads dist/ as a tarball to the `api` release (bulk download, and a copy that outlives any host),
+#   5. deploys the Worker and its static files when Cloudflare credentials are configured.
+#
+# Secrets (all optional): CONGRESS_API_KEY (free api.data.gov key; enables sponsored bills),
+# CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID (enable the deploy step).
+name: update
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "23 10 * * *"   # daily (UTC); GitHub runs schedules late, so dispatch for anything time-sensitive
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: api
+      GH_TOKEN: ${{ github.token }}
+      CONGRESS_API_KEY: ${{ secrets.CONGRESS_API_KEY }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The branch tip when the job starts, so a run queued behind another sees its data commit.
+          ref: ${{ github.ref_name }}
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -e .
+
+      - name: Collect and build
+        run: python -m us_officials.run
+
+      - name: Commit new House roll calls
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/raw
+          if ! git diff --cached --quiet; then
+            git commit -m "data: House roll calls $(date -u +%Y-%m-%dT%H:%MZ)"
+            if ! git pull --rebase origin "$GITHUB_REF_NAME"; then
+              git rebase --abort || true
+              echo "::error::$GITHUB_REF_NAME moved during this run and the data commit conflicts; not pushing."
+              exit 1
+            fi
+            git push
+          fi
+
+      - name: Upload the bulk download
+        run: |
+          tar -czf us-officials-v1.tar.gz -C dist .
+          gh release view "$RELEASE_TAG" >/dev/null 2>&1 || \
+            gh release create "$RELEASE_TAG" --title "api (rolling)" --latest=false \
+              --notes "The whole static API as one tarball, replaced on every run. See v1/index.json inside for when it was built."
+          gh release upload "$RELEASE_TAG" us-officials-v1.tar.gz --clobber
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+
+      - name: Deploy the Worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        working-directory: worker
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then
+            echo "CLOUDFLARE_API_TOKEN not set; skipping deploy"
+            exit 0
+          fi
+          npx --yes wrangler@4.130.0 deploy

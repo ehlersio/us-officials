@@ -1,0 +1,9 @@
+name = "us-officials"
+main = "src/index.js"
+compatibility_date = "2026-09-01"
+
+# dist/ is written by `python -m us_officials.run`. Files are served as-is; the Worker only runs for
+# paths with no file (in practice /v1/lookup).
+[assets]
+directory = "../dist"
+binding = "ASSETS"

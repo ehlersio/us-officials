@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "us-officials"
+version = "0.1.0"
+description = "Open, provenance-first API of who represents each US address: members of Congress and state legislators, their recorded votes, from official and open public sources."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [{ name = "Matt Ehlers" }]
+keywords = ["congress", "legislators", "elected-officials", "civic-tech", "open-data"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+  "License :: OSI Approved :: MIT License",
+  "Topic :: Database",
+]
+dependencies = [
+  "httpx>=0.27",
+  "pyyaml>=6",
+  "defusedxml>=0.7",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "ruff>=0.5", "build>=1.2"]
+
+[project.urls]
+Homepage = "https://github.com/ehlersio/us-officials"
+
+[project.scripts]
+us-officials = "us_officials.run:main"
+
+[tool.setuptools.packages.find]
+include = ["us_officials*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
