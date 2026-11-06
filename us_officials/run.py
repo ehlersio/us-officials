@@ -16,6 +16,7 @@ from .config import (
     LEGISLATORS_CURRENT_URL,
     OPENSTATES_PEOPLE_REPO,
     RAW_DIR,
+    SPONSORED_STATE,
     TIGERWEB_LEGISLATIVE,
     VOTEVIEW_BASE,
     congress_for,
@@ -72,7 +73,9 @@ def main(argv: list[str] | None = None) -> int:
     votes += senate_votes.collect(client, congress)
     log.info("votes: %d", len(votes))
 
-    sponsored = sponsored_bills.collect(client, [p["ids"]["bioguide"] for p in federal])
+    sponsored = sponsored_bills.collect(
+        client, [p["ids"]["bioguide"] for p in federal], congress=congress, now=now, state_path=SPONSORED_STATE
+    )
 
     index = build.build(
         DIST_DIR,

@@ -69,7 +69,8 @@ python3 -m venv .venv
 .venv/bin/python -m us_officials.run
 ```
 
-This writes `dist/`. Set `CONGRESS_API_KEY` to include sponsored bills. The first run downloads every House
+This writes `dist/`. Set `CONGRESS_API_KEY` to include sponsored bills: the first run reads every member's list
+(about 25 minutes), later runs only Congress.gov's update feed, with a full re-read once a week. The first run downloads every House
 roll call of the Congress (a few minutes); later runs fetch only new ones, from `data/raw/`.
 
 The Worker serves `dist/` and answers `/v1/lookup`:

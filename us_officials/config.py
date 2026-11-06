@@ -10,6 +10,9 @@ USER_AGENT = "us-officials/0.1 (+https://github.com/ehlersio/us-officials)"
 
 ROOT = Path(__file__).resolve().parent.parent
 RAW_DIR = ROOT / "data" / "raw"
+# Sponsored-bill lists between runs. Too large and too churny for git: the update workflow keeps it on the
+# `api` release instead.
+SPONSORED_STATE = ROOT / "data" / "sponsored_bills.json.gz"
 DIST_DIR = ROOT / "dist"
 API_VERSION = "v1"
 

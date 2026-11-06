@@ -7,6 +7,7 @@
 #      change), so a broken build is never published,
 #   3. commits the refreshed House JSONL,
 #   4. uploads dist/ as a tarball to the `api` release (bulk download, and a copy that outlives any host),
+#      with the sponsored-bill lists the next run starts from (a full re-read happens weekly),
 #   5. deploys the Worker and its static files when Cloudflare credentials are configured.
 #
 # Secrets (all optional): CONGRESS_API_KEY (free api.data.gov key; enables sponsored bills),
@@ -45,6 +46,13 @@ jobs:
 
       - run: pip install -e .
 
+      - name: Fetch the stored sponsored-bill lists from the release
+        run: |
+          mkdir -p data
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release download "$RELEASE_TAG" --pattern sponsored_bills.json.gz --dir data || true
+          fi
+
       - name: Collect and build
         run: python -m us_officials.run
 
@@ -70,6 +78,9 @@ jobs:
             gh release create "$RELEASE_TAG" --title "api (rolling)" --latest=false \
               --notes "The whole static API as one tarball, replaced on every run. See v1/index.json inside for when it was built."
           gh release upload "$RELEASE_TAG" us-officials-v1.tar.gz --clobber
+          if [ -f data/sponsored_bills.json.gz ]; then
+            gh release upload "$RELEASE_TAG" data/sponsored_bills.json.gz --clobber
+          fi
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
