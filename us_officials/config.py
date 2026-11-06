@@ -44,26 +44,36 @@ CONGRESS_API_KEY = os.environ.get("CONGRESS_API_KEY", "")
 # geocoder returns.
 TIGERWEB_LEGISLATIVE = "https://tigerweb.geo.census.gov/arcgis/rest/services/TIGERweb/Legislative/MapServer"
 
-# Which district maps the people currently in office were elected under, per Congress. A row is needed for
-# every Congress: maps redrawn for an election only apply once the winners are seated (January 3 for
-# Congress). State legislatures seat new members on their own dates, mostly in January; between an
-# election and the seating the lookup can be off for the few states that redrew state legislative maps.
-#   geocoder_vintage: the Census geocoder vintage whose layers are these maps
-#   tiger_layers: the TIGERweb Legislative MapServer layer ids for the same maps
-DISTRICT_MAPS: dict[int, dict] = {
-    119: {
-        "geocoder_vintage": "ACS2025_Current",
-        "congressional": "119th Congressional Districts",
-        "state_legislative": "2024 State Legislative Districts",
-        "tiger_layers": {"cd": 4, "sldu": 5, "sldl": 6},
-    },
-    120: {
-        "geocoder_vintage": "Current_Current",
-        "congressional": "120th Congressional Districts",
-        "state_legislative": "2026 State Legislative Districts",
-        "tiger_layers": {"cd": 0, "sldu": 1, "sldl": 2},
-    },
+# District maps. The lookup must use the maps the people now in office were elected under, which is not the
+# newest map: maps drawn for an election only apply once its winners are seated. Names are the layer names
+# the Census geocoder and TIGERweb both use; TIGERweb layer ids are looked up by name at build time, since
+# Census renumbers layers when it adds new ones.
+#
+# Congressional maps, per Congress. A row is needed for every Congress; which Congress is seated comes from
+# the members' own term dates (see maps.seated_congress), so the switch happens when congress-legislators
+# lists the new members, not on a calendar date.
+CONGRESSIONAL_MAPS: dict[int, dict] = {
+    119: {"name": "119th Congressional Districts", "geocoder_vintage": "ACS2025_Current"},
+    120: {"name": "120th Congressional Districts", "geocoder_vintage": "Current_Current"},
 }
+
+# State legislative maps, oldest first. A chamber moves to a newer map once a group of its members elected
+# under that map has been seated: at least STATE_MAP_COHORT of its seats sharing one start date later than
+# `cohort_after` (see maps.choose_state_maps). Special elections are spread over many dates and do not
+# count. Each state legislature seats new members on its own date, so states switch one by one.
+STATE_LEGISLATIVE_MAPS: list[dict] = [
+    {"name": "2024 State Legislative Districts", "geocoder_vintage": "ACS2025_Current", "cohort_after": None},
+    {"name": "2026 State Legislative Districts", "geocoder_vintage": "Current_Current", "cohort_after": "2025-06-01"},
+]
+STATE_MAP_COHORT = {"share": 0.08, "min_seats": 3}
+
+# Corrections where the cohort rule picks the wrong map: (state, "sldu" | "sldl") -> map name.
+STATE_MAP_OVERRIDES: dict[tuple[str, str], str] = {}
+
+# A public building's address, geocoded at build time to confirm every configured geocoder vintage still
+# answers with the expected map layers before anything is published.
+GEOCODER_CHECK_ADDRESS = "16 W Jones St, Raleigh, NC 27601"
+GEOCODER = "https://geocoding.geo.census.gov/geocoder/geographies"
 
 
 def congress_for(day: dt.date) -> int:
@@ -79,13 +89,13 @@ def congress_years(congress: int) -> tuple[int, int]:
     return first, first + 1
 
 
-def district_maps(congress: int) -> dict:
+def congressional_map(congress: int) -> dict:
     try:
-        return DISTRICT_MAPS[congress]
+        return CONGRESSIONAL_MAPS[congress]
     except KeyError:
         raise SystemExit(
-            f"No DISTRICT_MAPS entry for the {congress}th Congress in us_officials/config.py. Add the Census "
-            "geocoder vintage and TIGERweb layer ids for the maps its members were elected under."
+            f"No CONGRESSIONAL_MAPS entry for the {congress}th Congress in us_officials/config.py. Add the "
+            "congressional district layer name and a Census geocoder vintage that has it."
         ) from None
 
 

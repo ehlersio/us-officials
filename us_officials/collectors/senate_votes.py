@@ -7,9 +7,12 @@ from __future__ import annotations
 
 import csv
 import io
+import logging
 
 from ..config import SENATE_VOTE_URL, VOTEVIEW_BASE
 from ..http import Client
+
+log = logging.getLogger(__name__)
 
 PUBLISHER = "Voteview (UCLA), from U.S. Senate roll-call records"
 
@@ -21,9 +24,13 @@ _CAST = {
 }  # fmt: skip
 
 
-def _csv(client: Client, kind: str, congress: int) -> list[dict]:
-    text = client.get_bytes(f"{VOTEVIEW_BASE}/{kind}/S{congress}_{kind}.csv").decode("utf-8")
-    return list(csv.DictReader(io.StringIO(text)))
+def _csv(client: Client, kind: str, congress: int) -> list[dict] | None:
+    """One Voteview file, or None when it does not exist yet (a new Congress before its first votes)."""
+    resp = client.get(f"{VOTEVIEW_BASE}/{kind}/S{congress}_{kind}.csv")
+    if resp.status_code == 404:
+        return None
+    resp.raise_for_status()
+    return list(csv.DictReader(io.StringIO(resp.content.decode("utf-8"))))
 
 
 def build(rollcalls: list[dict], votes: list[dict], members: list[dict], congress: int) -> list[dict]:
@@ -62,5 +69,8 @@ def build(rollcalls: list[dict], votes: list[dict], members: list[dict], congres
 
 
 def collect(client: Client, congress: int) -> list[dict]:
-    rollcalls, votes, members = (_csv(client, kind, congress) for kind in ("rollcalls", "votes", "members"))
-    return build(rollcalls, votes, members, congress)
+    files = [_csv(client, kind, congress) for kind in ("rollcalls", "votes", "members")]
+    if any(f is None for f in files):
+        log.warning("Voteview has no Senate files for the %dth Congress yet; publishing no Senate votes", congress)
+        return []
+    return build(*files, congress)

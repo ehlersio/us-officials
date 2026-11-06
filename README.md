@@ -52,10 +52,16 @@ give is left out, never filled in.
 
 ## Known gaps
 
-- **Which district maps.** The lookup uses the maps the people now in office were elected under (the 119th
-  Congress's districts and the 2024 state legislative districts), not maps drawn for the next election.
-  `DISTRICT_MAPS` in `us_officials/config.py` needs a row for each new Congress. State legislatures seat new
-  members on their own dates; between an election and the seating, a state that redrew its maps can be off.
+- **Which district maps.** The lookup uses the maps the people now in office were elected under, not maps
+  drawn for the next election. For Congress, that is the Congress most House members' terms began in, so the
+  switch to new maps happens when congress-legislators lists the new members. For each state legislative
+  chamber, it is the newest map that a group of current members (8% of seats, at least 3, sworn in on the
+  same day) was seated under; special elections are spread over many days and do not move a chamber.
+  `/v1/coverage.json` shows each chamber's map and the group that decided it, and `STATE_MAP_OVERRIDES` in
+  `us_officials/config.py` corrects a wrong pick. A chamber is on one map as a whole, so a staggered senate,
+  or a chamber where only some seats were re-elected on new lines (as in Mississippi's 2025 court-ordered
+  special elections), can be off near the redrawn boundaries. `CONGRESSIONAL_MAPS` needs a row for each new
+  Congress, and every build checks that the Census geocoder still serves each map it uses.
 - **New Hampshire floterial districts** overlap the base House districts and are not on Census maps, so
   floterial representatives are not returned by the lookup (about 14% of NH's House).
 - **Maine's tribal representatives** have no district and are not returned by the lookup.

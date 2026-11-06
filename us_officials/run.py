@@ -8,7 +8,7 @@ import json
 import logging
 import sys
 
-from . import build
+from . import build, maps
 from .collectors import congress_people, districts, house_votes, senate_votes, sponsored_bills, state_people
 from .config import (
     DIST_DIR,
@@ -17,11 +17,11 @@ from .config import (
     OPENSTATES_PEOPLE_REPO,
     RAW_DIR,
     SPONSORED_STATE,
+    STATE_LEGISLATIVE_MAPS,
     TIGERWEB_LEGISLATIVE,
     VOTEVIEW_BASE,
-    congress_for,
     congress_years,
-    district_maps,
+    congressional_map,
 )
 from .http import Client
 
@@ -54,16 +54,29 @@ def main(argv: list[str] | None = None) -> int:
     now = dt.datetime.now(dt.UTC)
     today = args.date or now.date()
     stamp = now.strftime("%Y-%m-%dT%H:%M:%SZ")
-    congress = congress_for(today)
-    maps = district_maps(congress)
     client = Client()
 
     federal = congress_people.collect(client, stamp)
-    log.info("congress-legislators: %d current members", len(federal))
+    congress = maps.seated_congress(federal)
+    cd_map = congressional_map(congress)
+    log.info("congress-legislators: %d current members of the %dth Congress", len(federal), congress)
     states = state_people.collect(client, today, stamp)
     log.info("openstates: %d current state legislators", len(states))
-    tiger = districts.collect(client, maps["tiger_layers"])
+
+    choices = maps.choose_state_maps(states)
+    moved = sorted(f"{s}-{layer}" for (s, layer), c in choices.items() if c["map"] != STATE_LEGISLATIVE_MAPS[0]["name"])
+    log.info("state legislative maps: %d chambers past %s: %s", len(moved), STATE_LEGISLATIVE_MAPS[0]["name"], moved)
+    sld_names = [maps.layer_name(m["name"], layer) for m in STATE_LEGISLATIVE_MAPS for layer in ("sldu", "sldl")]
+    layers = districts.collect(client, [cd_map["name"], *sld_names])
+    sld, accept = maps.state_rows({n: layers[n] for n in sld_names}, choices)
+    tiger = {"cd": layers[cd_map["name"]], **sld}
     log.info("tigerweb: %s", {k: len(v) for k, v in tiger.items()})
+
+    # Every geocoder vintage the Worker may call must still have the layers it will read from it.
+    wanted: dict[str, set[str]] = {cd_map["geocoder_vintage"]: {cd_map["name"]}}
+    for (_, layer), c in choices.items():
+        wanted.setdefault(c["geocoder_vintage"], set()).add(maps.layer_name(c["map"], layer))
+    maps.check_geocoder(client, {v: sorted(names) for v, names in wanted.items()})
 
     votes = []
     for year in congress_years(congress):
@@ -85,7 +98,9 @@ def main(argv: list[str] | None = None) -> int:
         tiger=tiger,
         sponsored=sponsored,
         congress=congress,
-        maps=maps,
+        lookup_meta={"congressional": cd_map["name"], "geocoder_vintage": cd_map["geocoder_vintage"]},
+        choices=choices,
+        accept=accept,
         generated_at=stamp,
         sources=_sources(stamp, sponsored is not None),
     )

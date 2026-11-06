@@ -8,7 +8,7 @@ Layout (every path is a plain JSON file, so any static host or mirror can serve 
   people/<id>/bills.json              sponsored bills (only when collected with a Congress.gov key)
   votes/index.json                    every roll call without positions
   votes/<chamber>/<congress>-<session>-<roll>.json   one roll call with every member's position
-  lookup/meta.json                    the geocoder vintage the lookup Worker must use
+  lookup/meta.json                    the congressional map and geocoder vintage the lookup Worker starts from
   lookup/<state>.json                 Census GEOID -> person ids, per chamber, for one state
   coverage.json                       districts that could not be tied to legislators, per state
 """
@@ -58,8 +58,18 @@ def _cd_district(geoid: str) -> int:
     return 0 if code in (0, 98) else code  # 00 at-large, 98 non-voting delegate
 
 
-def build_lookup(federal: list[dict], state_people: list[dict], tiger: dict[str, list[dict]]) -> tuple[dict, dict]:
-    """Per-state lookup tables and the coverage report."""
+def build_lookup(
+    federal: list[dict],
+    state_people: list[dict],
+    tiger: dict[str, list[dict]],
+    choices: dict[tuple[str, str], dict] | None = None,
+    accept: dict[tuple[str, str], list[str]] | None = None,
+) -> tuple[dict, dict]:
+    """Per-state lookup tables and the coverage report.
+
+    `tiger` has the congressional ("cd") and chosen state legislative ("sldu", "sldl") district rows;
+    `choices` and `accept` (from maps.choose_state_maps and maps.state_rows) say which state legislative
+    map each chamber is on and which geocoder layer names the Worker may read its districts from."""
     lookup: dict[str, dict] = {}
     coverage: dict[str, dict] = {}
 
@@ -139,6 +149,19 @@ def build_lookup(federal: list[dict], state_people: list[dict], tiger: dict[str,
             )
             table(postal)[layer].setdefault(geoid, [])
 
+    for (postal, layer), names in (accept or {}).items():
+        if postal not in lookup:
+            continue
+        choice = (choices or {}).get((postal, layer), {})
+        lookup[postal].setdefault("maps", {})[layer] = {
+            "accept": [m + (" - Upper" if layer == "sldu" else " - Lower") for m in names],
+            "geocoder_vintage": choice.get("geocoder_vintage"),
+        }
+        if choice:
+            coverage.setdefault(postal, {}).setdefault("state_legislative_maps", {})[layer] = {
+                k: choice[k] for k in ("map", "seats", "cohort_date", "cohort_seats", "override")
+            }
+
     for postal, c in counts.items():
         cov = coverage.setdefault(postal, {})
         cov.update(c)
@@ -167,7 +190,9 @@ def build(
     tiger: dict[str, list[dict]],
     sponsored: dict[str, list[dict]] | None,
     congress: int,
-    maps: dict,
+    lookup_meta: dict,
+    choices: dict[tuple[str, str], dict] | None = None,
+    accept: dict[tuple[str, str], list[str]] | None = None,
     generated_at: str,
     sources: list[dict],
 ) -> dict:
@@ -202,8 +227,8 @@ def build(
     _write(root / "people" / "index.json", sorted((summary(p) for p in people), key=lambda s: (s["state"], s["id"])))
     _write(root / "votes" / "index.json", vote_index)
 
-    lookup, coverage = build_lookup(federal, state_people, tiger)
-    lookup_meta = {"congress": congress, **{k: v for k, v in maps.items() if k != "tiger_layers"}}
+    lookup, coverage = build_lookup(federal, state_people, tiger, choices, accept)
+    lookup_meta = {"congress": congress, **lookup_meta}
     _write(root / "lookup" / "meta.json", lookup_meta)
     for postal, t in lookup.items():
         t["has_senators"] = postal not in NON_STATES
@@ -225,7 +250,10 @@ def build(
         "api_version": "v1",
         "generated_at": generated_at,
         "congress": congress,
-        "district_maps": lookup_meta,
+        "district_maps": {
+            **lookup_meta,
+            "state_legislative": dict(Counter(c["map"] for c in (choices or {}).values())),
+        },
         "counts": counts,
         "sources": sources,
         "license": {"data": "CC0-1.0", "code": "MIT"},

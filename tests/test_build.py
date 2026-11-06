@@ -4,9 +4,6 @@ import pytest
 
 from us_officials import build
 
-MAPS = {"geocoder_vintage": "ACS2025_Current", "congressional": "119th Congressional Districts",
-        "state_legislative": "2024 State Legislative Districts", "tiger_layers": {"cd": 4, "sldu": 5, "sldl": 6}}
-
 
 def fed(bioguide, chamber, state, district=None):
     return {"id": f"bioguide-{bioguide}", "name": bioguide, "party": "Independent", "ids": {"bioguide": bioguide},
@@ -62,7 +59,9 @@ def test_build_writes_static_api(tmp_path):
     vote = {"chamber": "house", "congress": 119, "session": 1, "roll": 7, "date": "2025-01-09", "question": "Q",
             "description": "D", "bill": "H R 1", "result": "Passed", "source": {}, "positions": {"R2": "Yea"}}
     index = build.build(tmp_path, federal=FEDERAL, state_people=STATE, votes=[vote], tiger=TIGER, sponsored=None,
-                        congress=119, maps=MAPS, generated_at="2026-11-06T00:00:00Z", sources=[])
+                        congress=119, generated_at="2026-11-06T00:00:00Z", sources=[],
+                        lookup_meta={"congressional": "119th Congressional Districts",
+                                     "geocoder_vintage": "ACS2025_Current"})
     root = tmp_path / "v1"
     assert index["counts"]["house_votes"] == 1 and "sponsored_bills" not in index["counts"]
     person = json.loads((root / "people" / "bioguide-R2.json").read_text())

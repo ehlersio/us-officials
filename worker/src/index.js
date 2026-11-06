@@ -66,27 +66,46 @@ export function geocoderUrl(input, vintage) {
   return `${GEOCODER}/coordinates?x=${input.lng}&y=${input.lat}&${common}`;
 }
 
-// The districts of one geocoder answer, using the layer names the static build says are current, so a
-// geocoder answer on other maps is caught instead of being matched to the wrong people.
-export function districtsFrom(result, meta) {
+// The state, matched address, point and geographies of one geocoder answer, or null when nothing matched.
+export function geographiesOf(result) {
   const match = result.addressMatches ? result.addressMatches[0] : null;
   const geos = match ? match.geographies : result.geographies;
   if (!geos || !geos.States || !geos.States[0]) return null;
-  const pick = (name) => (geos[name] && geos[name][0]) || null;
-  const layer = (kind, name) => {
-    const g = pick(name);
-    return g ? { layer: kind, geoid: g.GEOID, name: g.NAME } : null;
-  };
   return {
     state: geos.States[0].STUSAB,
     matched_address: match ? match.matchedAddress : null,
     coordinates: match ? { lat: match.coordinates.y, lng: match.coordinates.x } : null,
-    districts: [
-      layer("cd", meta.congressional),
-      layer("sldu", `${meta.state_legislative} - Upper`),
-      layer("sldl", `${meta.state_legislative} - Lower`),
-    ].filter(Boolean),
+    geos,
   };
+}
+
+// The first of `names` present in `geos`, as a district of layer `kind`.
+export function pickDistrict(geos, kind, names) {
+  for (const name of names) {
+    const g = geos[name] && geos[name][0];
+    if (g) return { layer: kind, geoid: g.GEOID, name: g.NAME, map: name };
+  }
+  return null;
+}
+
+// Districts on the maps the people in office were elected under. The congressional map is the one the build
+// named (meta); each state legislative chamber names the maps it accepts (table.maps), and when the first
+// answer has none of them, `again(vintage)` asks the geocoder once more with the chamber's own vintage.
+export async function districtsFor(first, meta, table, again) {
+  const districts = [];
+  const cd = pickDistrict(first, "cd", [meta.congressional]);
+  if (cd) districts.push(cd);
+  for (const layer of ["sldu", "sldl"]) {
+    const m = (table.maps || {})[layer];
+    if (!m) continue;
+    let d = pickDistrict(first, layer, m.accept);
+    if (!d && m.geocoder_vintage) {
+      const geos = await again(m.geocoder_vintage);
+      d = geos ? pickDistrict(geos, layer, m.accept) : null;
+    }
+    if (d) districts.push(d);
+  }
+  return districts;
 }
 
 // Officials for the districts found, in a fixed order: Senators, House, state upper, state lower, at-large.
@@ -115,6 +134,12 @@ export function officialsFor(found, table) {
   return { officials, notes };
 }
 
+async function geocode(input, vintage) {
+  const res = await fetch(geocoderUrl(input, vintage), { headers: { Accept: "application/json" } });
+  if (!res.ok) throw new Error(`geocoder answered ${res.status}`);
+  return (await res.json()).result;
+}
+
 async function lookup(request, env) {
   const input = await readInput(request);
   if (input.error) return error(400, "bad_request", input.error);
@@ -122,31 +147,47 @@ async function lookup(request, env) {
   const meta = await asset(env, request, "/v1/lookup/meta.json");
   if (!meta) return error(503, "not_built", "The lookup tables are missing from this deployment.");
 
-  let result;
+  let found;
   try {
-    const res = await fetch(geocoderUrl(input, meta.geocoder_vintage), { headers: { Accept: "application/json" } });
-    if (!res.ok) throw new Error(`geocoder answered ${res.status}`);
-    result = (await res.json()).result;
+    found = geographiesOf(await geocode(input, meta.geocoder_vintage));
   } catch (e) {
     return error(502, "geocoder_unavailable", `The Census geocoder could not be reached (${e.message}).`);
   }
-
-  const found = districtsFrom(result, meta);
   if (!found) return error(404, "not_found", "The Census geocoder found no match for that location.");
 
   const table = await asset(env, request, `/v1/lookup/${found.state.toLowerCase()}.json`);
   if (!table) return error(404, "no_data", `No lookup table for ${found.state}.`);
 
-  const { officials, notes } = officialsFor(found, table);
+  // A second geocoder call, at the point the first one matched, for a chamber on other maps.
+  const point = found.coordinates || input;
+  const seen = {};
+  const again = async (vintage) => {
+    if (!(vintage in seen)) {
+      try {
+        const g = geographiesOf(await geocode({ lat: point.lat, lng: point.lng }, vintage));
+        seen[vintage] = g ? g.geos : null;
+      } catch {
+        seen[vintage] = null;
+      }
+    }
+    return seen[vintage];
+  };
+  const districts = await districtsFor(found.geos, meta, table, again);
+  const { officials, notes } = officialsFor({ districts }, table);
+  for (const layer of ["sldu", "sldl"]) {
+    if (table.maps && table.maps[layer] && !districts.some((d) => d.layer === layer)) {
+      notes.push(`The ${layer === "sldu" ? "upper" : "lower"} chamber's district could not be read from the Census geocoder.`);
+    }
+  }
   return json(
     {
       state: found.state,
       matched_address: found.matched_address,
       coordinates: found.coordinates,
-      districts: found.districts,
+      districts,
       officials,
       notes,
-      district_maps: meta,
+      district_maps: { congress: meta.congress, congressional: meta.congressional },
       sources: [
         { publisher: "U.S. Census Bureau Geocoder", url: "https://geocoding.geo.census.gov/" },
         { publisher: "us-officials", url: "/v1/index.json" },

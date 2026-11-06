@@ -168,3 +168,7 @@ def test_full_refresh_after_a_week(tmp_path):
     handler, seen = fake_api({"A1": [bill(119, "HR", "1", "One")]}, [], {})
     out = sponsored_bills.collect(_client(handler), ["A1"], congress=119, now=NOW, state_path=state, api_key="k")
     assert seen == ["/v3/member/A1/sponsored-legislation"] and len(out["A1"]) == 1
+
+
+def test_new_congress_without_voteview_files_has_no_senate_votes():
+    assert senate_votes.collect(_client(lambda req: httpx.Response(404)), 120) == []
