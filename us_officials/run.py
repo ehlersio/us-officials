@@ -102,7 +102,7 @@ def main(argv: list[str] | None = None) -> int:
         client, [p["ids"]["bioguide"] for p in federal], congress=congress, now=now, state_path=SPONSORED_STATE
     )
 
-    money = fec_money.collect(client, federal, today=today, now=now, state_path=FEC_STATE)
+    money = fec_money.collect(fec_money.fec_client(), federal, today=today, now=now, state_path=FEC_STATE)
 
     index = build.build(
         DIST_DIR,

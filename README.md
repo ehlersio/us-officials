@@ -65,9 +65,11 @@ cycle. `itemized_by_state` comes from a different FEC dataset, its processed ite
 split between states (`in_state_share`), not for amounts. Leadership PACs and outside spending (super PACs)
 are not included.
 
-The FEC allows 1,000 requests an hour per key, so each run reads every member's summary totals in a few
-batched requests and fetches full detail only for candidates whose numbers changed, at most 350 per run.
-After a filing deadline, it can take a couple of daily runs for every member to update.
+The FEC allows 1,000 requests an hour per key and refuses short bursts, so requests are spaced 3.7 seconds
+apart. Each run reads every member's summary totals in a few batched requests and fetches full detail only for
+candidates whose numbers changed, at most 400 per run (about 50 minutes). The first collection, about 1,050
+candidate-cycles, takes three runs; after a filing deadline it can take a couple of runs for every member to
+update.
 
 ## Known gaps
 

@@ -5,7 +5,8 @@ same keys). Without one this collector is skipped and no money fields are publis
 
 Per member and two-year cycle it publishes the totals the campaign reported to the FEC, and FEC's
 breakdown of itemized individual contributions by contributor state. The FEC allows 1,000 requests an hour
-per key, so a run first reads the summary totals of every member in a few batched requests, then fetches
+per key and refuses bursts, so requests are paced (REQUEST_PAUSE), and a run first reads the summary totals of
+every member in a few batched requests, then fetches
 full detail only for candidates whose numbers changed (or whose detail is older than REFRESH_AFTER), up to
 DETAIL_BUDGET of them; the rest wait for the next run. Results are kept in `state_path` between runs.
 
@@ -26,7 +27,14 @@ log = logging.getLogger(__name__)
 
 PUBLISHER = "Federal Election Commission, OpenFEC API"
 _BATCH = 100
-DETAIL_BUDGET = 350  # candidate-cycles per run, two requests each
+DETAIL_BUDGET = 400  # candidate-cycles per run, two requests each
+# The FEC refuses bursts well under its hourly limit (61 requests in 29 seconds drew 429s on 2026-11-06), so
+# requests are spaced to stay under 1,000 an hour, and a refusal is retried after 1, 8 and 64 seconds.
+REQUEST_PAUSE = 3.7
+
+
+def fec_client() -> Client:
+    return Client(retries=4, backoff=8.0, pause=REQUEST_PAUSE)
 REFRESH_AFTER = dt.timedelta(days=30)  # re-read unchanged detail this often, for amended reports
 
 # Reported totals published per cycle, renamed where FEC's name says less than it means.
