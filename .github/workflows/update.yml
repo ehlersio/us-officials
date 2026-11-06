@@ -10,7 +10,8 @@
 #      with the sponsored-bill lists the next run starts from (a full re-read happens weekly),
 #   5. deploys the Worker and its static files when Cloudflare credentials are configured.
 #
-# Secrets (all optional): CONGRESS_API_KEY (free api.data.gov key; enables sponsored bills),
+# Secrets (all optional): CONGRESS_API_KEY (free api.data.gov key; enables sponsored bills, and campaign
+# money unless a separate FEC_API_KEY is set),
 # CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID (enable the deploy step).
 name: update
 
@@ -33,6 +34,7 @@ jobs:
       RELEASE_TAG: api
       GH_TOKEN: ${{ github.token }}
       CONGRESS_API_KEY: ${{ secrets.CONGRESS_API_KEY }}
+      FEC_API_KEY: ${{ secrets.FEC_API_KEY }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -46,11 +48,12 @@ jobs:
 
       - run: pip install -e .
 
-      - name: Fetch the stored sponsored-bill lists from the release
+      - name: Fetch the stored sponsored-bill lists and FEC money from the release
         run: |
           mkdir -p data
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             gh release download "$RELEASE_TAG" --pattern sponsored_bills.json.gz --dir data || true
+            gh release download "$RELEASE_TAG" --pattern fec_money.json.gz --dir data || true
           fi
 
       - name: Collect and build
@@ -78,9 +81,9 @@ jobs:
             gh release create "$RELEASE_TAG" --title "api (rolling)" --latest=false \
               --notes "The whole static API as one tarball, replaced on every run. See v1/index.json inside for when it was built."
           gh release upload "$RELEASE_TAG" us-officials-v1.tar.gz --clobber
-          if [ -f data/sponsored_bills.json.gz ]; then
-            gh release upload "$RELEASE_TAG" data/sponsored_bills.json.gz --clobber
-          fi
+          for f in data/sponsored_bills.json.gz data/fec_money.json.gz; do
+            if [ -f "$f" ]; then gh release upload "$RELEASE_TAG" "$f" --clobber; fi
+          done
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:

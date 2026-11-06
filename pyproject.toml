@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "us-officials"
-version = "0.1.0"
-description = "Open, provenance-first API of who represents each US address: members of Congress and state legislators, their recorded votes, from official and open public sources."
+version = "0.2.0"
+description = "Open, provenance-first API of who represents each US address: members of Congress and state legislators, their recorded votes and campaign money, from official and open public sources."
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }

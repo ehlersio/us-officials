@@ -9,9 +9,18 @@ import logging
 import sys
 
 from . import build, maps
-from .collectors import congress_people, districts, house_votes, senate_votes, sponsored_bills, state_people
+from .collectors import (
+    congress_people,
+    districts,
+    fec_money,
+    house_votes,
+    senate_votes,
+    sponsored_bills,
+    state_people,
+)
 from .config import (
     DIST_DIR,
+    FEC_STATE,
     KNOWN_GAPS,
     LEGISLATORS_CURRENT_URL,
     OPENSTATES_PEOPLE_REPO,
@@ -28,7 +37,7 @@ from .http import Client
 log = logging.getLogger("us_officials")
 
 
-def _sources(retrieved_at: str, with_bills: bool) -> list[dict]:
+def _sources(retrieved_at: str, with_bills: bool, with_money: bool) -> list[dict]:
     rows = [
         {"publisher": congress_people.PUBLISHER, "url": LEGISLATORS_CURRENT_URL, "provides": "members of Congress"},
         {"publisher": state_people.PUBLISHER, "url": OPENSTATES_PEOPLE_REPO, "provides": "state legislators"},
@@ -39,6 +48,9 @@ def _sources(retrieved_at: str, with_bills: bool) -> list[dict]:
     if with_bills:
         rows.append({"publisher": sponsored_bills.PUBLISHER, "url": "https://api.congress.gov/",
                      "provides": "sponsored bills"})
+    if with_money:
+        rows.append({"publisher": fec_money.PUBLISHER, "url": "https://api.open.fec.gov/developers/",
+                     "provides": "campaign money"})
     return [{**r, "retrieved_at": retrieved_at} for r in rows]
 
 
@@ -90,6 +102,8 @@ def main(argv: list[str] | None = None) -> int:
         client, [p["ids"]["bioguide"] for p in federal], congress=congress, now=now, state_path=SPONSORED_STATE
     )
 
+    money = fec_money.collect(client, federal, today=today, now=now, state_path=FEC_STATE)
+
     index = build.build(
         DIST_DIR,
         federal=federal,
@@ -97,12 +111,13 @@ def main(argv: list[str] | None = None) -> int:
         votes=votes,
         tiger=tiger,
         sponsored=sponsored,
+        money=money,
         congress=congress,
         lookup_meta={"congressional": cd_map["name"], "geocoder_vintage": cd_map["geocoder_vintage"]},
         choices=choices,
         accept=accept,
         generated_at=stamp,
-        sources=_sources(stamp, sponsored is not None),
+        sources=_sources(stamp, sponsored is not None, money is not None),
     )
     print(json.dumps(index["counts"], indent=2))
 

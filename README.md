@@ -2,9 +2,9 @@
 
 An open, free API of who represents each US address, and how they vote. It covers the parts of three
 services that shut down: ProPublica's Congress API (2024), Google's Civic Information representatives
-lookup (April 2025) and the OpenSecrets API (April 2025, money data comes in a later version).
+lookup (April 2025) and the OpenSecrets API (April 2025).
 
-v0.1 covers:
+It covers:
 
 - **Address lookup**: an address or a point gives the two US Senators, the member of the House, and the
   state senator(s) and representative(s) for that location.
@@ -13,6 +13,10 @@ v0.1 covers:
   GovTrack, Open States).
 - **Votes**: every House and Senate roll call of the current Congress, and each member's position on each.
 - **Sponsored bills** for members of Congress, when the collector runs with a Congress.gov API key.
+- **Campaign money** for members of Congress, per two-year cycle, when the collector runs with an
+  api.data.gov key: what their campaigns raised, spent and hold, split into individual (donations of $200 or
+  less vs. larger), PAC and party money and the candidate's own money, plus the share of itemized individual
+  donations from in-state addresses. Only totals are published, never donors' names.
 
 The API states facts and where they came from. It has no scores, ratings or grades: apps built on it can
 make those calls.
@@ -30,6 +34,7 @@ Everything except the lookup is a static JSON file, so the whole API can be mirr
 | `/v1/people/<id>.json` | One person: role, contact, ids, sources |
 | `/v1/people/<id>/votes.json` | A member of Congress's recorded votes |
 | `/v1/people/<id>/bills.json` | Bills they sponsored (only when built with a Congress.gov key) |
+| `/v1/people/<id>/money.json` | Campaign money per two-year cycle, with notes on what each figure covers (only when built with an api.data.gov key) |
 | `/v1/votes/index.json` | Every roll call, without positions |
 | `/v1/votes/<house\|senate>/<congress>-<session>-<roll>.json` | One roll call with every member's position |
 | `/v1/coverage.json` | Per state: legislators that could not be tied to a Census district, and districts with no officeholder on record |
@@ -45,10 +50,24 @@ Person ids are `bioguide-<Bioguide id>` for members of Congress and `openstates-
 | House roll calls | [Office of the Clerk](https://clerk.house.gov/Votes), one XML file per roll call |
 | Senate roll calls | [Voteview](https://voteview.com/) (UCLA). senate.gov blocks automated downloads, so each Senate vote links to its senate.gov page instead of being fetched from it. |
 | Sponsored bills | [Congress.gov API](https://api.congress.gov/) (free api.data.gov key) |
+| Campaign money | [OpenFEC API](https://api.open.fec.gov/developers/) (same free api.data.gov key) |
 | Districts | [Census geocoder](https://geocoding.geo.census.gov/) at request time, [TIGERweb](https://tigerweb.geo.census.gov/) district tables at build time |
 
 Every person record lists the sources it came from and when they were retrieved. A value a source does not
 give is left out, never filled in.
+
+## Campaign money
+
+Each cycle in `money.json` has the totals the candidate's authorized committees reported to the FEC, through
+`coverage_end_date`. `individual_unitemized_contributions` is money from donors who gave $200 or less in the
+cycle. `itemized_by_state` comes from a different FEC dataset, its processed itemized transactions through
+`processed_through`; its dollars do not add up to the reported itemized total, so it is published for the
+split between states (`in_state_share`), not for amounts. Leadership PACs and outside spending (super PACs)
+are not included.
+
+The FEC allows 1,000 requests an hour per key, so each run reads every member's summary totals in a few
+batched requests and fetches full detail only for candidates whose numbers changed, at most 350 per run.
+After a filing deadline, it can take a couple of daily runs for every member to update.
 
 ## Known gaps
 

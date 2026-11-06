@@ -13,6 +13,7 @@ RAW_DIR = ROOT / "data" / "raw"
 # Sponsored-bill lists between runs. Too large and too churny for git: the update workflow keeps it on the
 # `api` release instead.
 SPONSORED_STATE = ROOT / "data" / "sponsored_bills.json.gz"
+FEC_STATE = ROOT / "data" / "fec_money.json.gz"
 DIST_DIR = ROOT / "dist"
 API_VERSION = "v1"
 
@@ -39,6 +40,11 @@ SENATE_VOTE_URL = (
 # fields are published.
 CONGRESS_API = "https://api.congress.gov/v3"
 CONGRESS_API_KEY = os.environ.get("CONGRESS_API_KEY", "")
+
+# Campaign money. The FEC API takes the same api.data.gov keys as Congress.gov, so CONGRESS_API_KEY serves
+# for both unless FEC_API_KEY is set.
+FEC_API = "https://api.open.fec.gov/v1"
+FEC_API_KEY = os.environ.get("FEC_API_KEY") or CONGRESS_API_KEY
 
 # District names per state and chamber, used to tie Open States district names to the Census GEOIDs the
 # geocoder returns.

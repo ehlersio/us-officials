@@ -6,6 +6,7 @@ Layout (every path is a plain JSON file, so any static host or mirror can serve 
   people/<id>.json                    full record: role, contact, ids in other databases, sources
   people/<id>/votes.json              recorded votes (members of Congress)
   people/<id>/bills.json              sponsored bills (only when collected with a Congress.gov key)
+  people/<id>/money.json              campaign money per two-year cycle (only when collected with a FEC key)
   votes/index.json                    every roll call without positions
   votes/<chamber>/<congress>-<session>-<roll>.json   one roll call with every member's position
   lookup/meta.json                    the congressional map and geocoder vintage the lookup Worker starts from
@@ -20,6 +21,8 @@ import shutil
 from collections import Counter, defaultdict
 from pathlib import Path
 
+from .collectors.fec_money import NOTES as MONEY_NOTES
+from .collectors.fec_money import PUBLISHER as MONEY_PUBLISHER
 from .collectors.state_people import CHAMBER_LAYER, SEAT_SUFFIX, is_at_large, norm_district
 from .config import KNOWN_GAPS
 from .states import BY_FIPS, NON_STATES
@@ -193,6 +196,7 @@ def build(
     lookup_meta: dict,
     choices: dict[tuple[str, str], dict] | None = None,
     accept: dict[tuple[str, str], list[str]] | None = None,
+    money: dict[str, list[dict]] | None = None,
     generated_at: str,
     sources: list[dict],
 ) -> dict:
@@ -223,6 +227,12 @@ def build(
             if sponsored is not None and bioguide in sponsored:
                 record["bills_url"] = f"/v1/people/{p['id']}/bills.json"
                 _write(root / "people" / p["id"] / "bills.json", {"person": p["id"], "sponsored": sponsored[bioguide]})
+            if money and p["id"] in money:
+                record["money_url"] = f"/v1/people/{p['id']}/money.json"
+                _write(root / "people" / p["id"] / "money.json", {
+                    "person": p["id"], "cycles": money[p["id"]], "notes": MONEY_NOTES,
+                    "source": {"publisher": MONEY_PUBLISHER, "url": "https://api.open.fec.gov/developers/"},
+                })
         _write(root / "people" / f"{p['id']}.json", record)
     _write(root / "people" / "index.json", sorted((summary(p) for p in people), key=lambda s: (s["state"], s["id"])))
     _write(root / "votes" / "index.json", vote_index)
@@ -246,6 +256,8 @@ def build(
     }
     if sponsored is not None:
         counts["sponsored_bills"] = sum(len(b) for b in sponsored.values())
+    if money is not None:
+        counts["members_with_campaign_money"] = len(money)
     index = {
         "api_version": "v1",
         "generated_at": generated_at,
