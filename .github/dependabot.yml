@@ -1,0 +1,31 @@
+version: 2
+updates:
+  # Python: the collector's runtime and dev dependencies (pyproject.toml)
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "America/New_York"
+    open-pull-requests-limit: 5
+    groups:
+      python:
+        patterns:
+          - "*"
+
+  # Workflow actions are pinned to commit SHAs; this keeps the pins and their
+  # version comments moving. (The Worker has no npm dependencies, and the
+  # wrangler version in update.yml is pinned by hand.)
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "America/New_York"
+    open-pull-requests-limit: 5
+    groups:
+      actions:
+        patterns:
+          - "*"
